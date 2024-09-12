@@ -15,7 +15,7 @@ def get_realtime_klines(symbol, interval, lookback, client, end_time=None):
     data['volume'] = data['volume'].astype(float)
 
     return data
-
+ 
 def calculate_rsi(data, window):
     delta = data['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
