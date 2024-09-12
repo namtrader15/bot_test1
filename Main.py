@@ -5,6 +5,9 @@ import time
 import threading
 import pytz
 from datetime import datetime
+from PNL_Check import extract_pnl_and_position_info, get_pnl_percentage  # Sử dụng hàm từ PNL_Check
+from trade_history import save_trade_history  # Import từ trade_history.py
+
 # Khởi tạo ứng dụng Flask
 app = Flask(__name__)
 
@@ -12,12 +15,24 @@ app = Flask(__name__)
 client = None
 last_order_status = None  # Biến lưu trữ trạng thái lệnh cuối cùng
 
-
 @app.route('/')
 def home():
     global last_order_status
     current_balance = get_account_balance(client)
-    pnl = get_position_profit(client, 'BTCUSDT')  # Lấy PNL hiện tại
+
+    # Gọi hàm để cập nhật các thông số từ Binance API
+    extract_pnl_and_position_info(client, 'BTCUSDT')
+
+    # Lấy PNL% từ PNL_Check
+    pnl_percentage = get_pnl_percentage()
+
+    # Lấy thông tin về Entry Price và Mark Price
+    position_info = client.futures_position_information(symbol='BTCUSDT')
+    entry_price = float(position_info[0]['entryPrice'])
+    mark_price = float(position_info[0]['markPrice'])
+
+    # Hiển thị PNL% hoặc thông báo nếu không có giá trị PNL%
+    pnl_display = f"{pnl_percentage:.2f}%" if pnl_percentage is not None else "PNL chưa có giá trị"
 
     # Lấy múi giờ UTC+7 (giờ Việt Nam)
     tz = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -31,64 +46,83 @@ def home():
     </head>
     <body>
         <h1>Namtrader BTCUSDT.P Status</h1>
-        <p>Giá trị tài khoản hiện tại: {current_balance} USDT</p>
-        <p>Lợi nhuận hiện tại (PNL): {pnl} USDT</p>
+        <p>Giá trị tài khoản hiện tại: {current_balance:.2f} USDT</p>
+        <p>Entry Price: {entry_price:.2f} USDT</p>
+        <p>Mark Price: {mark_price:.2f} USDT</p>
+        <p>Lợi nhuận hiện tại (PNL%): {pnl_display}</p>
         <p>Trạng thái lệnh cuối cùng: {last_order_status}</p>
         <p>Thời gian hiện tại (UTC+7): {current_time}</p>  <!-- Hiển thị thời gian UTC+7 -->
         <footer>
-            <p>&copy; 2024 Binance Trading Bot</p>
+            <p>&copy; 2024 NamTrading Bot</p>
         </footer>
     </body>
     </html>
     '''
-
-
+    
 
 # Hàm lấy giá trị tài khoản Futures
 def get_account_balance(client):
     account_info = client.futures_account()
-    usdt_balance = float(account_info['totalWalletBalance']
-                         )  # Số dư USDT trong tài khoản Futures
+    usdt_balance = float(account_info['totalWalletBalance'])  # Số dư USDT trong tài khoản Futures
     return usdt_balance
+# Hàm cài đặt đòn bẩy cho giao dịch Futures
+def set_leverage(client, symbol, leverage):
+    try:
+        response = client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        print(f"Đã cài đặt đòn bẩy {response['leverage']}x cho {symbol}.")
+    except Exception as e:
+        print(f"Lỗi khi cài đặt đòn bẩy: {str(e)}")
 
-
-# Hàm lấy lợi nhuận từ vị thế hiện tại
-def get_position_profit(client, symbol):
+# Hàm tính PNL (USDT)
+def get_pnl_usdt(client, symbol):
+    # Lấy thông tin vị thế hiện tại
     position_info = client.futures_position_information(symbol=symbol)
+    
+    # Lấy giá trị Entry Price và Mark Price
+    entry_price = float(position_info[0]['entryPrice'])
+    mark_price = float(position_info[0]['markPrice'])
+    
+    # Lấy khối lượng vị thế
+    position_amt = float(position_info[0]['positionAmt'])
+    
+    # Tính PNL (USDT): (Mark Price - Entry Price) * Position Amount
+    pnl_usdt = (mark_price - entry_price) * position_amt
+    
+    return pnl_usdt
 
-    # Kiểm tra nếu không có vị thế mở (positionAmt == 0)
-    if float(position_info[0]['positionAmt']) == 0:
-        print("Không có vị thế mở, không có lợi nhuận.")
-        return 0.0  # Không có lợi nhuận nếu không có vị thế mở
+# Hàm kiểm tra điều kiện StopLoss và TakeProfit dựa trên PNL%
+def check_sl_tp(client, symbol):
+    # Gọi hàm để cập nhật giá trị PNL%
+    extract_pnl_and_position_info(client, symbol)
 
-    pnl = float(position_info[0]['unRealizedProfit']
-                )  # Lợi nhuận chưa ghi nhận (P&L) từ vị thế hiện tại
-    return pnl
+    # Lấy giá trị pnl_percentage và pnl_usdt từ các hàm
+    pnl_percentage = get_pnl_percentage()
+    pnl_usdt = get_pnl_usdt(client, symbol)  # Gọi đúng hàm get_pnl_usdt
 
+    # Kiểm tra nếu PNL% có giá trị
+    if pnl_percentage is not None:
+        print(f"Lợi nhuận hiện tại (PNL%): {pnl_percentage:.2f}%")
+    else:
+        print("PNL% chưa có giá trị.")
+        return None
 
-# Hàm lấy giá trị vào lệnh ban đầu
-def get_entry_price(client, symbol):
-    position_info = client.futures_position_information(symbol=symbol)
+    # Điều kiện StopLoss: Nếu PNL% <= -50
+    if pnl_percentage <= -50:
+        print(f"Điều kiện StopLoss đạt được: Lỗ hơn 50%. Đóng lệnh.")
+        close_position(client, pnl_percentage, pnl_usdt)
+        return "stop_loss"
 
-    # Kiểm tra nếu không có vị thế mở
-    if float(position_info[0]['positionAmt']) == 0:
-        return 0.0
+    # Điều kiện TakeProfit: Nếu PNL% >= 100
+    if pnl_percentage >= 100:
+        print(f"Điều kiện TakeProfit đạt được: Lãi hơn 100%. Đóng lệnh.")
+        close_position(client, pnl_percentage, pnl_usdt)
+        return "take_profit"
 
-    entry_price = float(position_info[0]['entryPrice'])  # Giá vào lệnh ban đầu
-    return entry_price
-
-
-# Hàm lấy khối lượng vào lệnh
-def get_position_quantity(client, symbol):
-    position_info = client.futures_position_information(symbol=symbol)
-    qty = float(
-        position_info[0]
-        ['positionAmt'])  # Số lượng vị thế hiện tại (khối lượng vào lệnh)
-    return qty
+    return None
 
 
 # Hàm đóng lệnh
-def close_position(client):
+def close_position(client, pnl_percentage, pnl_usdt):
     global last_order_status
     symbol = 'BTCUSDT'
 
@@ -111,15 +145,14 @@ def close_position(client):
     else:
         last_order_status = "Không có vị thế mở."
 
+    # In ra thông tin lệnh đóng với đúng dấu
+    pnl_percentage_display = f"+{pnl_percentage:.2f}%" if pnl_percentage > 0 else f"-{abs(pnl_percentage):.2f}%"
+    pnl_usdt_display = f"+{pnl_usdt:.2f} USDT" if pnl_usdt > 0 else f"-{abs(pnl_usdt):.2f} USDT"
+    
+    print(f"Đóng lệnh - PNL hiện tại (USDT): {pnl_usdt_display}, PNL hiện tại (%): {pnl_percentage_display}")
 
-# Hàm cài đặt đòn bẩy cho giao dịch Futures
-def set_leverage(client, symbol, leverage):
-    try:
-        response = client.futures_change_leverage(symbol=symbol,
-                                                  leverage=leverage)
-        print(f"Đã cài đặt đòn bẩy {leverage}x cho {symbol}.")
-    except Exception as e:
-        print(f"Lỗi khi cài đặt đòn bẩy: {str(e)}")
+    # Lưu lịch sử giao dịch
+    save_trade_history(pnl_percentage, pnl_usdt)
 
 
 # Hàm kiểm tra nếu có lệnh nào đang mở
@@ -131,37 +164,6 @@ def check_open_position(client, symbol):
         return True  # Có lệnh mở
     return False  # Không có lệnh mở
 
-
-# Hàm kiểm tra điều kiện TakeProfit và StopLoss
-def check_sl_tp(client, symbol):
-    # Kiểm tra nếu không có vị thế mở
-    quantity = get_position_quantity(client, symbol)
-    if quantity == 0:
-        print("Không có vị thế mở, bỏ qua kiểm tra SL/TP.")
-        return None  # Bỏ qua nếu không có vị thế mở
-
-    # Nếu có vị thế, tiếp tục kiểm tra lợi nhuận và giá trị vị thế
-    profit = get_position_profit(client, symbol)
-    entry_price = get_entry_price(client, symbol)
-    position_value = entry_price * abs(quantity)
-
-    print(f"Lợi nhuận hiện tại: {profit} USDT")
-    print(f"Giá trị vị thế ban đầu: {position_value} USDT")
-    # Điều kiện StopLoss: Nếu lỗ 50% so với giá trị đầu tư ban đầu
-    if profit <= -0.5 * position_value:
-        print("Điều kiện StopLoss đạt được: Lợi nhuận giảm 50%. Đóng lệnh.")
-        close_position(client)
-        return "stop_loss"
-
-    # Điều kiện TakeProfit: Lợi nhuận từ vị thế >= 100% của khối lượng vào lệnh
-    elif profit >= position_value:
-        print("Điều kiện TakeProfit đạt được: Lợi nhuận đạt 100%. Đóng lệnh.")
-        close_position(client)
-        return "take_profit"
-
-    return None
-
-
 # Hàm thực hiện lệnh mua hoặc bán trên Binance
 def place_order(client, order_type):
     global last_order_status
@@ -169,7 +171,7 @@ def place_order(client, order_type):
     usdt_balance = get_account_balance(client)
     leverage = 125
 
-    trading_balance = usdt_balance * leverage * 0.75  # Giảm tỷ lệ xuống để đảm bảo đủ ký quỹ
+    trading_balance = usdt_balance * leverage * 0.005  # Giảm tỷ lệ xuống để đảm bảo đủ ký quỹ
 
     ticker = client.get_symbol_ticker(symbol=symbol)
     btc_price = float(ticker['price'])
@@ -190,7 +192,6 @@ def place_order(client, order_type):
                                     type='MARKET',
                                     quantity=quantity)
         last_order_status = f"Đã bán {quantity} BTC."
-
 
 # Hàm bot giao dịch chạy mỗi 10 giây
 def trading_bot():
@@ -215,8 +216,7 @@ def trading_bot():
         # Kiểm tra nếu đã có lệnh mở
         if check_open_position(client, symbol):
             if final_trend == "Xu hướng không rõ ràng" or final_trend == "Xu hướng chưa rõ ràng!":
-                print("Xu hướng không rõ ràng. Đóng tất cả các lệnh.")
-                close_position(client)
+                print("Xu hướng không rõ ràng")
                 time.sleep(10)  # Đợi 10 giây trước khi kiểm tra lại
                 continue
 
@@ -242,5 +242,4 @@ if __name__ == "__main__":
     trading_thread.start()
 
     # Chạy Flask server song song với bot giao dịch
-    # app.run(host='0.0.0.0', port=8080)
-      app.run()
+    app.run(host='0.0.0.0', port=8080)
