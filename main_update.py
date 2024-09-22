@@ -1,4 +1,4 @@
-from Entry1 import get_final_trend  # Import hàm phân tích xu hướng tổng thể 
+from Entry_Super import get_final_trend  # Import hàm phân tích xu hướng tổng thể 
 from binance.client import Client
 from flask import Flask
 import time
@@ -95,8 +95,20 @@ def set_leverage(client, symbol, leverage):
         print(f"Lỗi khi cài đặt đòn bẩy: {str(e)}")
 
 # Hàm tính ATR với khung thời gian 4 giờ (4h)
+#def calculate_atr(client, symbol, length=14):
+#    klines = client.futures_klines(symbol=symbol, interval='4h', limit=length + 1)  # Chuyển sang khung thời gian 4h
+#    trs = []
+#    for i in range(1, len(klines)):
+#        high = float(klines[i][2])
+#        low = float(klines[i][3])
+#        close_prev = float(klines[i - 1][4])
+#        tr = max(high - low, abs(high - close_prev), abs(low - close_prev))
+#        trs.append(tr)
+#    atr = sum(trs) / len(trs)
+#    return atr
+# Hàm tính ATR với khung thời gian 1 giờ (1h)
 def calculate_atr(client, symbol, length=14):
-    klines = client.futures_klines(symbol=symbol, interval='4h', limit=length + 1)  # Chuyển sang khung thời gian 4h
+    klines = client.futures_klines(symbol=symbol, interval='1h', limit=length + 1)  # Chuyển sang khung thời gian 1h
     trs = []
     for i in range(1, len(klines)):
         high = float(klines[i][2])
@@ -149,7 +161,7 @@ def place_order(client, order_type):
     symbol = 'BTCUSDT'
     usdt_balance = get_account_balance(client)
     atr = calculate_atr(client, symbol)
-    klines = client.futures_klines(symbol=symbol, interval='4h', limit=1)  # Chuyển sang khung thời gian 4h
+    klines = client.futures_klines(symbol=symbol, interval='1h', limit=1)  # Chuyển sang khung thời gian 1h
     high = float(klines[0][2])
     low = float(klines[0][3])
     mark_price = float(klines[0][4])
@@ -166,10 +178,10 @@ def place_order(client, order_type):
         leverage = 100 / abs(percent_change)
         leverage = max(1, min(round(leverage), 125))
         if leverage > 125:
-            leverage = 100
+            leverage = 125
         set_leverage(client, symbol, leverage)
     
-    trading_balance = 4 * leverage
+    trading_balance = 4 * leverage #Nhập R:R ở đây (4$)
     ticker = client.get_symbol_ticker(symbol=symbol)
     btc_price = float(ticker['price'])
     quantity = round(trading_balance / btc_price, 3)
@@ -227,7 +239,8 @@ def trading_bot():
             if result == "stop_loss" or result == "take_profit":
                 break
 
-            final_trend = get_final_trend()
+            # Gọi hàm get_final_trend() và truyền đối tượng client
+            final_trend = get_final_trend(client)
             print(f"Kết quả xu hướng từ hàm get_final_trend(): {final_trend}")
 
             # Lấy thông tin vị thế để kiểm tra và sử dụng trong điều kiện xu hướng
@@ -235,25 +248,25 @@ def trading_bot():
             qty = float(position_info[0]['positionAmt'])
 
             if check_open_position(client, symbol):
-                if final_trend == "Xu hướng không rõ ràng" or final_trend == "Xu hướng chưa rõ ràng!":
+                if final_trend == "Xu hướng không rõ ràng":
                     print("Xu hướng không rõ ràng")
                     time.sleep(10)
                     continue
 
                 # Đóng lệnh nếu xu hướng thay đổi
-                if final_trend == "Xu Hướng Tăng!" and qty < 0:  # Đóng lệnh sell nếu có tín hiệu mua
+                if final_trend == "Xu hướng tăng" and qty < 0:  # Đóng lệnh sell nếu có tín hiệu mua
                     close_position(client, get_pnl_percentage(), get_pnl_usdt())
-                elif final_trend == "Xu Hướng Giảm!" and qty > 0:  # Đóng lệnh buy nếu có tín hiệu bán
+                elif final_trend == "Xu hướng giảm" and qty > 0:  # Đóng lệnh buy nếu có tín hiệu bán
                     close_position(client, get_pnl_percentage(), get_pnl_usdt())
 
                 print("Hiện đã có lệnh mở. Không thực hiện thêm lệnh mới.")
                 time.sleep(10)
                 continue
 
-            if final_trend == "Xu Hướng Tăng!":
+            if final_trend == "Xu hướng tăng":
                 print("Xu hướng tăng. Thực hiện lệnh mua.")
                 place_order(client, "buy")
-            elif final_trend == "Xu Hướng Giảm!":
+            elif final_trend == "Xu hướng giảm":
                 print("Xu hướng giảm. Thực hiện lệnh bán.")
                 place_order(client, "sell")
 
@@ -263,6 +276,8 @@ def trading_bot():
             print(f"Lỗi khi gọi API hoặc xử lý giao dịch: {str(e)}")
             playsound(r"C:\Users\DELL\Desktop\GPT train\noconnect.mp3")
             time.sleep(5)
+
+
 
 
 if __name__ == "__main__":
