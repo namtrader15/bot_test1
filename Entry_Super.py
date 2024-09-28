@@ -55,7 +55,7 @@ def calculate_macd(data, slow=26, fast=12, signal=9):
 def analyze_trend(client, interval, name, end_time=None):
     # Lấy dữ liệu thời gian thực
     symbol = 'BTCUSDT'
-    lookback = 1000
+    lookback = 1500
     data = get_realtime_klines(client, symbol, interval, lookback, end_time)
     rsi = calculate_rsi(data, 14)
     macd, signal_line = calculate_macd(data)
@@ -92,6 +92,7 @@ def analyze_trend(client, interval, name, end_time=None):
 
     # Dự đoán trên tập kiểm tra
     y_pred = grid.predict(X_test)
+    y_pred_prob = grid.predict_proba(X_test)[:, 1]  # Lấy xác suất của lớp "tăng" (label = 1)
 
     # Đánh giá mô hình
     accuracy = accuracy_score(y_test, y_pred) * 100  # Chuyển sang dạng %
@@ -99,13 +100,18 @@ def analyze_trend(client, interval, name, end_time=None):
 
     # Dự đoán xu hướng giá thời gian thực
     latest_features = features_scaled[-1].reshape(1, -1)
-    prediction_prob = grid.predict_proba(latest_features)[0]
-    prediction = grid.predict(latest_features)
+    prediction_prob = grid.predict_proba(latest_features)[0][1]  # Xác suất dự đoán lớp "tăng"
 
-    # Xác định xu hướng dựa trên ngưỡng
-    trend = prediction[0]
+    # Xác định xu hướng dựa trên ngưỡng threshold
+    if prediction_prob >= 0.55:
+        trend = 1  # Xu hướng tăng
+    elif prediction_prob <= 0.45:
+        trend = 0  # Xu hướng giảm
+    else:
+        trend = -1  # Xu hướng không rõ ràng nếu xác suất nằm giữa 0.45 và 0.55
 
     return trend, accuracy, f1
+
 
 # Hàm trả về kết quả xu hướng cuối cùng
 def get_final_trend(client):
@@ -118,17 +124,18 @@ def get_final_trend(client):
 
     # Kiểm tra các điều kiện để quyết định kết quả
     if (trend_h1 == 1 and trend_h4 == 1 and combined_acc >= 0.88) or \
-       (trend_h1 == 1 and accuracy_h1 >= 70 and f1_h1 >= 70) or \
-       (trend_h4 == 1 and accuracy_h4 >= 70 and f1_h4 >= 70):
+       (trend_h1 == 1 and accuracy_h1 > 71 and f1_h1 > 71) or \
+       (trend_h4 == 1 and accuracy_h4 >69 and f1_h4 >69):
         return "Xu hướng tăng"
         
     elif (trend_h1 == 0 and trend_h4 == 0 and combined_acc >= 0.88) or \
-         (trend_h1 == 0 and accuracy_h1 >= 70 and f1_h1 >= 70) or \
-         (trend_h4 == 0 and accuracy_h4 >= 70 and f1_h4 >= 70):
+         (trend_h1 == 0 and accuracy_h1 > 71 and f1_h1 > 71) or \
+         (trend_h4 == 0 and accuracy_h4 > 69 and f1_h4 > 69):
         return "Xu hướng giảm"
         
+    # Nếu một trong các khung thời gian có xu hướng không rõ ràng
+    elif trend_h1 == -1 or trend_h4 == -1:
+        return "Xu hướng không rõ ràng"
+    
     else:
         return "Xu hướng không rõ ràng"
-
-
-

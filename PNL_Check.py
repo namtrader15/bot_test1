@@ -3,10 +3,11 @@ from binance.client import Client
 
 # Biến toàn cục để lưu trữ PNL%
 pnl_percentage = None
+pnl_usdt = None  # Thêm biến toàn cục để lưu trữ PNL (USDT)
 
 # Hàm trích xuất và tính toán PNL
 def extract_pnl_and_position_info(client, symbol):
-    global pnl_percentage  # Khai báo biến toàn cục
+    global pnl_percentage, pnl_usdt  # Khai báo biến toàn cục
 
     # Lấy thông tin vị thế hiện tại từ Binance API
     position_info = client.futures_position_information(symbol=symbol)
@@ -46,3 +47,8 @@ def extract_pnl_and_position_info(client, symbol):
 def get_pnl_percentage():
     global pnl_percentage  # Khai báo biến toàn cục để đảm bảo truy cập được
     return pnl_percentage
+
+# Hàm trả về giá trị của pnl_usdt
+def get_pnl_usdt():
+    global pnl_usdt  # Khai báo biến toàn cục để đảm bảo truy cập được
+    return pnl_usdt
