@@ -52,7 +52,7 @@ def check_internet_and_alert():
 def home():
     global last_order_status
     current_balance = get_account_balance(client)
-    extract_pnl_and_position_info(client, 'BTCUSDT')
+    extract_pnl_and_position_info(client, 'ETHUSDT')
     pnl_percentage = get_pnl_percentage()
     position_info = client.futures_position_information(symbol='ETHUSDT')
     entry_price = float(position_info[0]['entryPrice'])
@@ -66,9 +66,8 @@ def home():
     <head>
         <title>Binance Bot Status</title>
         <meta http-equiv="refresh" content="20">
-    </head>
-    <body>
-        <h1>Namtrader BTCUSDT.P Status</h1>
+    </head>    <body>
+        <h1>Namtrader ETHSDT.P Status</h1>
         <p>Giá trị tài khoản hiện tại: {current_balance:.2f} USDT</p>
         <p>Entry Price: {entry_price:.2f} USDT</p>
         <p>Mark Price: {mark_price:.2f} USDT</p>
@@ -138,26 +137,26 @@ def place_order(client, order_type):
 
     # Kiểm tra điều kiện mua (buy) và bán (sell)
     if order_type == "buy":
-        if (percent_change_hl is not None and percent_change_hl <= 0.11) or \
-           (percent_change_ll is not None and percent_change_ll <= 0.11):
-            # Điều kiện mua khi giá hiện tại không chênh lệch quá 0.11% so với HL hoặc LL
+        if (percent_change_hl is not None and percent_change_hl <= 0.23) or \
+           (percent_change_ll is not None and percent_change_ll <= 0.23):
+        # Điều kiện mua khi giá hiện tại không chênh lệch quá 0.23% so với HL hoặc LL
             percent_change = ((atr_long_stop_loss - mark_price) / mark_price) * 100
             stop_loss_price = atr_long_stop_loss  # Đặt Stop Loss cho lệnh Buy
-            # Ghi giá trị stoploss vào file
             with open("stoploss_buy.txt", "w") as file:
                 file.write(str(stop_loss_price))
         else:
             # In ra lý do không phù hợp để mua
-            if percent_change_hl is None and percent_change_ll is None:
-                print("Không có giá trị Higher Low (HL) hoặc Lower Low (LL) để so sánh.")
-            else:
-                print("Giá hiện tại chênh lệch quá 0.11% so với HL hoặc LL.")
+            percent_change_hl_display = percent_change_hl if percent_change_hl is not None else "N/A"
+            percent_change_hh_display = percent_change_hh if percent_change_hh is not None else "N/A"
+        
+            print(f"Giá hiện tại đang chênh lệch {percent_change_hl_display:.2f}% so với HL và {percent_change_hh_display:.2f}% so với HH.")
             return  # Không thực hiện lệnh nếu không thỏa mãn điều kiện
 
+
     elif order_type == "sell":
-        if (percent_change_hh is not None and percent_change_hh <= 0.11) or \
-           (percent_change_lh is not None and percent_change_lh <= 0.11):
-            # Điều kiện bán khi giá hiện tại không chênh lệch quá 0.11% so với HH hoặc LH
+        if (percent_change_hh is not None and percent_change_hh <= 0.23) or \
+           (percent_change_lh is not None and percent_change_lh <= 0.23):
+            # Điều kiện bán khi giá hiện tại không chênh lệch quá 0.23% so với HH hoặc LH
             percent_change = ((mark_price - atr_short_stop_loss) / mark_price) * 100
             stop_loss_price = atr_short_stop_loss  # Đặt Stop Loss cho lệnh Sell
             # Ghi giá trị stoploss vào file
@@ -165,21 +164,21 @@ def place_order(client, order_type):
                 file.write(str(stop_loss_price))
         else:
             # In ra lý do không phù hợp để bán
-            if percent_change_hh is None and percent_change_lh is None:
-                print("Không có giá trị Higher High (HH) hoặc Lower High (LH) để so sánh.")
-            else:
-                print("Giá hiện tại chênh lệch quá 0.11% so với HH hoặc LH.")
+            percent_change_hl_display = percent_change_hl if percent_change_hl is not None else "N/A"
+            percent_change_hh_display = percent_change_hh if percent_change_hh is not None else "N/A"
+    
+            print(f"Giá hiện tại đang chênh lệch {percent_change_hl_display:.2f}% so với HL và {percent_change_hh_display:.2f}% so với HH.")
             return  # Không thực hiện lệnh nếu không thỏa mãn điều kiện
 
     if percent_change is not None and percent_change != 0:
-        leverage = 15 / abs(percent_change)
+        leverage = 19 / abs(percent_change)
         leverage = max(1, min(round(leverage), 125))  # Đảm bảo leverage nằm trong khoảng 1-125
         set_leverage(client, symbol, leverage)
 
-    trading_balance = 15 * leverage  # Risk=2$
+    trading_balance = 15 * leverage  # Risk=3$
     ticker = client.get_symbol_ticker(symbol=symbol)
-    btc_price = float(ticker['price'])
-    quantity = round(trading_balance / btc_price, 3)
+    eth_price = float(ticker['price'])
+    quantity = round(trading_balance / eth_price, 3)
 
     if quantity <= 0:
         print("Số lượng giao dịch không hợp lệ. Hủy giao dịch.")
@@ -187,11 +186,11 @@ def place_order(client, order_type):
 
     if order_type == "buy":
         client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=quantity)
-        last_order_status = f"Đã mua {quantity} BTC. Stop-loss đặt tại: {stop_loss_price:.2f} USDT."
+        last_order_status = f"Đã mua {quantity} ETH. Stop-loss đặt tại: {stop_loss_price:.2f} USDT."
         print(f"Giá trị stop-loss cho lệnh Buy: {stop_loss_price:.2f} USDT")
     elif order_type == "sell":
         client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=quantity)
-        last_order_status = f"Đã bán {quantity} BTC. Stop-loss đặt tại: {stop_loss_price:.2f} USDT."
+        last_order_status = f"Đã bán {quantity} ETH. Stop-loss đặt tại: {stop_loss_price:.2f} USDT."
         print(f"Giá trị stop-loss cho lệnh Sell: {stop_loss_price:.2f} USDT")
 
 
@@ -208,7 +207,7 @@ def check_sl_tp(client, symbol):
 
     # Lấy thông tin vị thế hiện tại
     position_info = client.futures_position_information(symbol=symbol)
-    qty = float(position_info[0]['positionAmt'])  # Số lượng vị thế hiện tại (BTC)
+    qty = float(position_info[0]['positionAmt'])  # Số lượng vị thế hiện tại (ETH)
     
     # Lấy giá mark price hiện tại từ API Binance
     mark_price = float(position_info[0]['markPrice'])
@@ -235,35 +234,25 @@ def check_sl_tp(client, symbol):
     mark_price = float(position_info[0]['markPrice'])
 
  #Hàm SL
-    if qty > 0:  # Lệnh Buy đang mở
-        if mark_price <= stop_loss_price:
-            print(f"Điều kiện Stop Loss cho lệnh Buy đạt được (mark_price <= stop_loss_price: {stop_loss_price:.2f}). Đóng lệnh Buy.")
-            close_position(client, pnl_percentage, pnl_usdt)
-            return "stop_loss_buy"
-
-    # Kiểm tra nếu là lệnh Sell và giá mark hiện tại >= stop_loss_price (Stop Loss cho Sell)
-    elif qty < 0:  # Lệnh Sell đang mở
-        if mark_price >= stop_loss_price:
-            print(f"Điều kiện Stop Loss cho lệnh Sell đạt được (mark_price >= stop_loss_price: {stop_loss_price:.2f}). Đóng lệnh Sell.")
-            close_position(client, pnl_percentage, pnl_usdt)
-            return "stop_loss_sell"
-
+    if pnl_percentage <= -20:
+        print(f"Điều kiện StopLoss đạt được (PNL <= -20%). Đóng lệnh.")
+        close_position(client, pnl_percentage, pnl_usdt)
  #Hàm TP
     ### Lệnh Sell (qty < 0)
     if qty < 0:  # Lệnh Sell đang mở
-        # Kiểm tra điều kiện Take Profit: mark price không chênh quá 0.11% so với updated LL hoặc nhỏ hơn updated LL
-        if (percent_change_ll is not None and percent_change_ll <= 0.11) or (updated_ll and mark_price <= updated_ll):
+        # Kiểm tra điều kiện Take Profit: mark price không chênh quá 0.23% so với updated LL hoặc nhỏ hơn updated LL
+        if (percent_change_ll is not None and percent_change_ll <= 0.23) or (updated_ll and mark_price <= updated_ll):
             print(f"Điều kiện Take Profit đạt được cho lệnh Sell (mark_price <= updated LL: {updated_ll:.2f}). Đóng lệnh Sell.")
             close_position(client, pnl_percentage, pnl_usdt)
-            return "take_profit_sell"
+           # return "take_profit_sell"
 
     ### Lệnh Buy (qty > 0)
     elif qty > 0:  # Lệnh Buy đang mở
-        # Kiểm tra điều kiện Take Profit: mark price không chênh quá 0.11% so với updated HH hoặc lớn hơn updated HH
-        if (percent_change_hh is not None and percent_change_hh <= 0.11) or (updated_hh and mark_price >= updated_hh):
+        # Kiểm tra điều kiện Take Profit: mark price không chênh quá 0.23% so với updated HH hoặc lớn hơn updated HH
+        if (percent_change_hh is not None and percent_change_hh <= 0.23) or (updated_hh and mark_price >= updated_hh):
             print(f"Điều kiện Take Profit đạt được cho lệnh Buy (mark_price >= updated HH: {updated_hh:.2f}). Đóng lệnh Buy.")
             close_position(client, pnl_percentage, pnl_usdt)
-            return "take_profit_buy"
+           # return "take_profit_buy"
 
     return None
 
@@ -280,10 +269,10 @@ def close_position(client, pnl_percentage, pnl_usdt):
 
     if qty > 0:
         client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
-        last_order_status = f"Đã đóng lệnh long {qty} BTC."
+        last_order_status = f"Đã đóng lệnh long {qty} ETH."
     elif qty < 0:
         client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=abs(qty))
-        last_order_status = f"Đã đóng lệnh short {abs(qty)} BTC."
+        last_order_status = f"Đã đóng lệnh short {abs(qty)} ETH."
     else:
         last_order_status = "Không có vị thế mở."
 
@@ -295,8 +284,8 @@ def close_position(client, pnl_percentage, pnl_usdt):
 # Hàm bot giao dịch chạy mỗi 60 giây
 def trading_bot():
     global client
-    api_key = 'WIQ9isqoeJOTjaaoEO27Ycgcx1RNySNNC2X9PMdYhusHT8gFOTcBH9EGJ5G0Lnxc'
-    api_secret = 'eFX13NMDauEJuHE9vMzJjDG9CNqYriJUGGfT1CAnY8wSH5vYMDbHrp7dJc7GBHW6'
+    api_key = 'l7DNpDmTIcZNkmwUdvBNDAtdNn9lp95lbTOti1QNLAnVw9W2CwAOiuFp4DUrICgv'
+    api_secret = 'uqJVI7NG2wsmI1mgDysa2S4iUs5x4YqqW5cxVBeyxKhmbAYcOdRVpJutpTj3E97a'
     client = Client(api_key, api_secret, tld='com', testnet=False)
     
     # Nạp giá trị stop-loss từ file nếu có
