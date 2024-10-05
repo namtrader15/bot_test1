@@ -171,7 +171,7 @@ def place_order(client, order_type):
             return  # Không thực hiện lệnh nếu không thỏa mãn điều kiện
 
     if percent_change is not None and percent_change != 0:
-        leverage = 19 / abs(percent_change)
+        leverage = 16 / abs(percent_change)
         leverage = max(1, min(round(leverage), 125))  # Đảm bảo leverage nằm trong khoảng 1-125
         set_leverage(client, symbol, leverage)
 
